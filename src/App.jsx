@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-const API = "http://localhost:4000";;
+const API = "https://inminutes-backend.onrender.com";
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Instrument+Sans:wght@400;500;600&display=swap');
 *{margin:0;padding:0;box-sizing:border-box}body{font-family:'Instrument Sans',sans-serif;background:#0A0A0F;color:#F5F0E8}
@@ -129,6 +129,9 @@ export default function UserApp() {
   const [newAddr, setNewAddr] = useState({ label:"Home", line1:"", city:"", pincode:"", phone:"" });
   const [ordering, setOrdering] = useState(false);
   const [orderErr, setOrderErr] = useState("");
+  const [userLocation, setUserLocation] = useState(null);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [locationErr, setLocationErr] = useState("");
 
   const fetchProducts = async () => { try { const r = await fetch(`${API}/products`); setProducts(await r.json()); } catch(e) {} };
   const fetchOrders = async (user) => {
@@ -141,11 +144,20 @@ export default function UserApp() {
   const doLogin = async () => {
     setAuthErr("");
     try {
-      const r = await fetch(`${API}/users/login`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(loginForm) });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      const r = await fetch(`${API}/users/login`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(loginForm), signal: controller.signal });
+      clearTimeout(timeout);
       const d = await r.json();
       if (!r.ok) { setAuthErr(d.error); return; }
       setAuth(d); setPage("home");
-    } catch(e) { setAuthErr("Cannot connect. Is backend running?"); }
+    } catch(e) { 
+      if (e.name === 'AbortError') {
+        setAuthErr("Request timed out. Backend is slow, please try again.");
+      } else {
+        setAuthErr("Error: " + e.message);
+      }
+    }
   };
   const doRegister = async () => {
     setAuthErr("");
@@ -173,6 +185,27 @@ export default function UserApp() {
     await fetch(`${API}/users/${auth.id}/address/${id}`, { method:"DELETE" });
     const r = await fetch(`${API}/users/${auth.id}`); setAuth(await r.json());
   };
+  const getLocation = () => {
+    setLocationLoading(true);
+    setLocationErr("");
+    if (!navigator.geolocation) {
+      setLocationErr("Geolocation not supported on this device");
+      setLocationLoading(false);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setLocationLoading(false);
+      },
+      (err) => {
+        setLocationErr("Could not get location. Please allow location access.");
+        setLocationLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
   const placeOrder = async () => {
     const addrs = auth.addresses||[];
     if (!addrs.length) { setOrderErr("Add a delivery address first"); return; }
@@ -180,7 +213,7 @@ export default function UserApp() {
     const address = addrs.find(a=>a.id===selAddr)||addrs[0];
     const items = cartItems.map(p=>({ productId:p.id, name:p.name, price:p.price, quantity:cart[p.id], image:(p.images||[])[0]||null }));
     try {
-      const r = await fetch(`${API}/orders`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({userId:auth.id,items,paymentMethod:payMethod,address}) });
+      const r = await fetch(`${API}/orders`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({userId:auth.id,items,paymentMethod:payMethod,address,location:userLocation}) });
       const d = await r.json();
       if (!r.ok) { setOrderErr(d.error); setOrdering(false); return; }
       setCart({}); await fetchOrders(auth); await fetchProducts(); setPage("success");
@@ -307,6 +340,27 @@ export default function UserApp() {
           <div style={{fontFamily:"Syne,sans-serif",fontSize:15,fontWeight:700,marginBottom:12}}>Payment</div>
           {[{id:"cod",icon:"💵",name:"Cash on Delivery",sub:"Pay when delivered"},{id:"gpay",icon:"📱",name:"Google Pay",sub:"UPI"},{id:"phonepe",icon:"💜",name:"PhonePe",sub:"UPI"},{id:"paytm",icon:"💙",name:"Paytm",sub:"Wallet"}].map(o=><div key={o.id} className={`popt${payMethod===o.id?" sel":""}`} onClick={()=>setPayMethod(o.id)}><div className="pico">{o.icon}</div><div style={{flex:1}}><div style={{fontSize:14,fontWeight:600,marginBottom:2}}>{o.name}</div><div style={{fontSize:12,color:"var(--m)"}}>{o.sub}</div></div><div className={`radio${payMethod===o.id?" chk":""}`}/></div>)}
           <div className="sumbox" style={{marginTop:8}}><div className="sr"><span>Subtotal</span><span>₹{subtotal}</span></div><div className="sr"><span>Delivery</span><span>₹25</span></div><div className="sr tot"><span>Total</span><span>₹{subtotal+25}</span></div></div>
+          {/* LOCATION SHARING */}
+          <div style={{background:"var(--s2)",borderRadius:14,padding:14,marginTop:12,marginBottom:4}}>
+            <div style={{fontFamily:"Syne,sans-serif",fontSize:13,fontWeight:700,marginBottom:8}}>📍 Share Your Location</div>
+            {userLocation
+              ? <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:18}}>✅</span>
+                  <div>
+                    <div style={{fontSize:12,color:"var(--g)",fontWeight:600}}>Location shared!</div>
+                    <div style={{fontSize:11,color:"var(--m)"}}>Lat: {userLocation.lat.toFixed(5)}, Lng: {userLocation.lng.toFixed(5)}</div>
+                  </div>
+                  <button onClick={()=>setUserLocation(null)} style={{marginLeft:"auto",background:"none",border:"1px solid var(--b)",borderRadius:8,padding:"4px 10px",fontSize:11,color:"var(--m)",cursor:"pointer"}}>Reset</button>
+                </div>
+              : <div>
+                  <div style={{fontSize:12,color:"var(--m)",marginBottom:8}}>Help us deliver faster by sharing your exact location</div>
+                  <button onClick={getLocation} disabled={locationLoading} style={{background:"var(--a)",color:"#fff",border:"none",borderRadius:10,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:"pointer",width:"100%",opacity:locationLoading?0.7:1}}>
+                    {locationLoading?"📡 Getting location...":"📍 Use My Current Location"}
+                  </button>
+                  {locationErr&&<div style={{fontSize:11,color:"#ff5c5c",marginTop:6}}>{locationErr}</div>}
+                </div>
+            }
+          </div>
           {orderErr&&<div className="errmsg" style={{marginTop:10}}>{orderErr}</div>}
           <button className="chkbtn" style={{opacity:ordering?.6:1}} onClick={placeOrder} disabled={ordering}>{ordering?"Placing Order...":payMethod==="cod"?"Place Order":`Pay ₹${subtotal+25}`}</button>
         </div>}
