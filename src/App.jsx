@@ -374,7 +374,8 @@ export default function UserApp() {
             const steps=["Confirmed","Packed","Out for Delivery","Delivered"];
             const stepIcons=["✅","📦","🚚","🎉"];
             const cur=steps.indexOf(o.status);
-            return <div key={o.id} className="ordcard" style={{marginBottom:14}}>
+            const isCancelled=o.status==="Cancelled";
+            return <div key={o.id} className="ordcard" style={{marginBottom:14,opacity:isCancelled?0.8:1}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
                 <div style={{fontFamily:"Syne,sans-serif",fontWeight:700,fontSize:14}}>{o.id}</div>
                 <span className={`stag ${statusCls(o.status)}`}>{o.status}</span>
@@ -388,7 +389,7 @@ export default function UserApp() {
                   </div>
                   {i<3&&<div style={{flex:1,height:2,background:i<cur?"var(--a)":"var(--b)",margin:"0 4px",marginBottom:16,minWidth:8,transition:"background .3s"}}/>}
                 </div>)}
-              </div>
+              </div>}
               <div style={{fontSize:13,color:"var(--m)",marginBottom:6}}>{o.items.map(i=>`${i.name} x${i.quantity}`).join(", ")}</div>
               <div style={{display:"flex",justifyContent:"space-between"}}><div style={{fontFamily:"Syne,sans-serif",fontWeight:700}}>₹{o.total}</div><div style={{fontSize:11,color:"var(--m)"}}>{new Date(o.createdAt).toLocaleDateString("en-IN")}</div></div>
               {o.address&&<div style={{fontSize:11,color:"var(--m)",marginTop:4}}>📍 {o.address.line1}, {o.address.city}</div>}
